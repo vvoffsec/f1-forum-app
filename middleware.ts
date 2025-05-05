@@ -1,9 +1,10 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import type { NextRequest } from "next/server";
 
+// anything listed here will NOT get redirected to Clerk’s hosted sign-in
 const isPublicRoute = createRouteMatcher([
-  "/sign-in(.*)",
-  "/sign-up(.*)",
+  "/",             // allow your main page through
+  "/api/(.*)",     // allow all API endpoints through (e.g. /api/threads)
 ]);
 
 export default clerkMiddleware(async (auth, req: NextRequest) => {
