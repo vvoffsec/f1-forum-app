@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import PinIcon from "@/components/PinIcon";
 
 const LockIcon = () => (
@@ -53,6 +53,32 @@ interface Thread {
   pinned: boolean;
 }
 
+interface ErgastRacesResponse {
+  MRData: {
+    RaceTable: { Races: Race[] };
+  };
+}
+
+interface ErgastDriverStandingsResponse {
+  MRData: {
+    StandingsTable: {
+      StandingsLists: {
+        DriverStandings: DriverStanding[];
+      }[];
+    };
+  };
+}
+
+interface ErgastConstructorStandingsResponse {
+  MRData: {
+    StandingsTable: {
+      StandingsLists: {
+        ConstructorStandings: ConstructorStanding[];
+      }[];
+    };
+  };
+}
+
 export default function MainPage() {
   const [races, setRaces] = useState<Race[]>([]);
   const [driverStandings, setDriverStandings] = useState<DriverStanding[]>([]);
@@ -64,46 +90,22 @@ export default function MainPage() {
       const year = new Date().getFullYear().toString();
       const base = "https://api.jolpi.ca/ergast/f1";
 
+      // Fetch races
       const resRaces = await fetch(`${base}/${year}/races.json`);
-      const racesJson = (await resRaces.json() as any).MRData.RaceTable.Races as any[];
-      setRaces(
-        racesJson.map((r) => ({
-          season: r.season,
-          round: r.round,
-          raceName: r.raceName,
-          date: r.date,
-          time: r.time,
-          Circuit: {
-            circuitName: r.Circuit.circuitName,
-            Location: {
-              locality: r.Circuit.Location.locality,
-              country: r.Circuit.Location.country,
-            },
-          },
-        }))
-      );
+      const racesJson = (await resRaces.json()) as ErgastRacesResponse;
+      setRaces(racesJson.MRData.RaceTable.Races);
 
+      // Fetch driver standings
       const resDS = await fetch(`${base}/${year}/driverstandings.json`);
-      const dsData = (await resDS.json() as any).MRData.StandingsTable.StandingsLists[0]
-        .DriverStandings as any[];
-      setDriverStandings(
-        dsData.map((d) => ({
-          position: d.position,
-          points: d.points,
-          Driver: { givenName: d.Driver.givenName, familyName: d.Driver.familyName },
-        }))
-      );
+      const dsJson = (await resDS.json()) as ErgastDriverStandingsResponse;
+      const dsData = dsJson.MRData.StandingsTable.StandingsLists[0]?.DriverStandings ?? [];
+      setDriverStandings(dsData);
 
+      // Fetch constructor standings
       const resCS = await fetch(`${base}/${year}/constructorstandings.json`);
-      const csData = (await resCS.json() as any).MRData.StandingsTable.StandingsLists[0]
-        .ConstructorStandings as any[];
-      setConstructorStandings(
-        csData.map((c) => ({
-          position: c.position,
-          points: c.points,
-          Constructor: { name: c.Constructor.name },
-        }))
-      );
+      const csJson = (await resCS.json()) as ErgastConstructorStandingsResponse;
+      const csData = csJson.MRData.StandingsTable.StandingsLists[0]?.ConstructorStandings ?? [];
+      setConstructorStandings(csData);
 
       const CACHE_KEY = "threads_cache";
       const CACHE_TIME_KEY = "threads_cache_time";
@@ -127,11 +129,11 @@ export default function MainPage() {
     load();
   }, []);
 
-  const unlockedThreads = [...threads]
+  const unlockedThreads = threads
     .filter((t) => !t.locked)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  const lockedThreads = [...threads]
+  const lockedThreads = threads
     .filter((t) => t.locked)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -183,7 +185,7 @@ export default function MainPage() {
           </ul>
         </div>
 
-        {/* past GPs */}
+        {/* Past GPs */}
         <div className="bg-f1-card p-6 rounded-2xl">
           <h2 className="text-2xl font-semibold mb-4">Past GPs</h2>
           <ul className="space-y-2 text-gray-200">
@@ -197,7 +199,7 @@ export default function MainPage() {
         </div>
       </section>
 
-      {/* overall standings section */}
+      {/* Standings */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
         {/* Drivers */}
         <div className="bg-f1-card p-6 rounded-2xl overflow-x-auto">
@@ -248,18 +250,14 @@ export default function MainPage() {
         </div>
       </section>
 
-      {/* recent threads */}
+      {/* Recent Threads */}
       <section>
         <h2 className="text-2xl font-semibold text-f1-red mb-4">Recent Threads</h2>
 
-        {/* unlocked threads */}
         <ul className="space-y-4">
           {unlockedThreads.map((t) => (
             <li key={t.id} className="flex items-center bg-f1-card p-4 rounded-2xl">
-              <Link
-                href={`/gp/${t.gpId}/threads/${t.id}`}
-                className="flex-1 hover:text-f1-red transition"
-              >
+              <Link href={`/gp/${t.gpId}/threads/${t.id}`} className="flex-1 hover:text-f1-red transition">
                 {t.title}
               </Link>
               {t.pinned && <PinIcon />}
@@ -267,20 +265,12 @@ export default function MainPage() {
           ))}
         </ul>
 
-        {/* line separation */}
         {lockedThreads.length > 0 && <div className="my-8 border-t border-gray-700" />}
 
-        {/* locked threads */}
         <ul className="space-y-4">
           {lockedThreads.map((t) => (
-            <li
-              key={t.id}
-              className="flex items-center bg-f1-card p-4 rounded-2xl opacity-70"
-            >
-              <Link
-                href={`/gp/${t.gpId}/threads/${t.id}`}
-                className="flex-1 hover:text-f1-red transition"
-              >
+            <li key={t.id} className="flex items-center bg-f1-card p-4 rounded-2xl opacity-70">
+              <Link href={`/gp/${t.gpId}/threads/${t.id}`} className="flex-1 hover:text-f1-red transition">
                 {t.title}
               </Link>
               <LockIcon />
