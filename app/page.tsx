@@ -1,14 +1,14 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
 import {
-  useUser,
-  useClerk,
+  SignOutButton,
   SignedIn,
   SignedOut,
-  SignOutButton,
+  useClerk,
+  useUser,
 } from "@clerk/nextjs";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import PinIcon from "@/components/PinIcon";
 
 const LockIcon = () => (
@@ -88,7 +88,7 @@ interface ErgastConstructorStandingsResponse {
 
 export default function MainPage() {
   // Clerk user and modal hooks
-  const { isLoaded, isSignedIn, user } = useUser();
+  const { isLoaded, user } = useUser();
   const { openSignIn, openUserProfile } = useClerk();
 
   // Dropdown menu state
