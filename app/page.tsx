@@ -1,66 +1,293 @@
-import { Metadata } from "next"
-import { Button } from "components/Button/Button"
+"use client";
 
-import { LP_GRID_ITEMS } from "lp-items"
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import PinIcon from "@/components/PinIcon";
 
-export const metadata: Metadata = {
-  title: "Next.js Enterprise Boilerplate",
-  twitter: {
-    card: "summary_large_image",
-  },
-  openGraph: {
-    url: "https://next-enterprise.vercel.app/",
-    images: [
-      {
-        width: 1200,
-        height: 630,
-        url: "https://raw.githubusercontent.com/Blazity/next-enterprise/main/.github/assets/project-logo.png",
-      },
-    ],
-  },
+const LockIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    viewBox="0 0 24 24"
+  >
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+
+interface Race {
+  season: string;
+  round: string;
+  raceName: string;
+  date: string;
+  time: string;
+  Circuit: {
+    circuitName: string;
+    Location: { locality: string; country: string };
+  };
 }
 
-export default function Web() {
+interface DriverStanding {
+  position: string;
+  points: string;
+  Driver: { givenName: string; familyName: string };
+}
+
+interface ConstructorStanding {
+  position: string;
+  points: string;
+  Constructor: { name: string };
+}
+
+interface Thread {
+  id: string;
+  gpId: string;
+  title: string;
+  date: string;
+  locked: boolean;
+  pinned: boolean;
+}
+
+export default function MainPage() {
+  const [races, setRaces] = useState<Race[]>([]);
+  const [driverStandings, setDriverStandings] = useState<DriverStanding[]>([]);
+  const [constructorStandings, setConstructorStandings] = useState<ConstructorStanding[]>([]);
+  const [threads, setThreads] = useState<Thread[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      const year = new Date().getFullYear().toString();
+      const base = "https://api.jolpi.ca/ergast/f1";
+
+      const resRaces = await fetch(`${base}/${year}/races.json`);
+      const racesJson = (await resRaces.json() as any).MRData.RaceTable.Races as any[];
+      setRaces(
+        racesJson.map((r) => ({
+          season: r.season,
+          round: r.round,
+          raceName: r.raceName,
+          date: r.date,
+          time: r.time,
+          Circuit: {
+            circuitName: r.Circuit.circuitName,
+            Location: {
+              locality: r.Circuit.Location.locality,
+              country: r.Circuit.Location.country,
+            },
+          },
+        }))
+      );
+
+      const resDS = await fetch(`${base}/${year}/driverstandings.json`);
+      const dsData = (await resDS.json() as any).MRData.StandingsTable.StandingsLists[0]
+        .DriverStandings as any[];
+      setDriverStandings(
+        dsData.map((d) => ({
+          position: d.position,
+          points: d.points,
+          Driver: { givenName: d.Driver.givenName, familyName: d.Driver.familyName },
+        }))
+      );
+
+      const resCS = await fetch(`${base}/${year}/constructorstandings.json`);
+      const csData = (await resCS.json() as any).MRData.StandingsTable.StandingsLists[0]
+        .ConstructorStandings as any[];
+      setConstructorStandings(
+        csData.map((c) => ({
+          position: c.position,
+          points: c.points,
+          Constructor: { name: c.Constructor.name },
+        }))
+      );
+
+      const CACHE_KEY = "threads_cache";
+      const CACHE_TIME_KEY = "threads_cache_time";
+      const TTL = 5 * 60 * 1000;
+
+      const cached = localStorage.getItem(CACHE_KEY);
+      const cacheTime = localStorage.getItem(CACHE_TIME_KEY);
+
+      if (cached && cacheTime && Date.now() - parseInt(cacheTime, 10) < TTL) {
+        const parsed = JSON.parse(cached) as Thread[];
+        setThreads(parsed);
+      } else {
+        const resThreads = await fetch("/api/threads?limit=50");
+        const data = (await resThreads.json()) as Thread[];
+        setThreads(data);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+      }
+    };
+
+    load();
+  }, []);
+
+  const unlockedThreads = [...threads]
+    .filter((t) => !t.locked)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const lockedThreads = [...threads]
+    .filter((t) => t.locked)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const now = new Date();
+  const past = races.filter((r) => new Date(`${r.date}T${r.time}`) < now);
+  const upcoming = races.filter((r) => new Date(`${r.date}T${r.time}`) >= now);
+  const currentGP = upcoming[0] ?? null;
+
   return (
-    <>
-      <section className="bg-white dark:bg-gray-900">
-        <div className="mx-auto grid max-w-(--breakpoint-xl) px-4 py-8 text-center lg:py-16">
-          <div className="mx-auto place-self-center">
-            <h1 className="mb-4 max-w-2xl text-4xl leading-none font-extrabold tracking-tight md:text-5xl xl:text-6xl dark:text-white">
-              Next.js Enterprise Boilerplate
-            </h1>
-            <p className="mb-6 max-w-2xl font-light text-gray-500 md:text-lg lg:mb-8 lg:text-xl dark:text-gray-400">
-              Jumpstart your enterprise project with our feature-packed, high-performance Next.js boilerplate!
-              Experience rapid UI development, AI-powered code reviews, and an extensive suite of tools for a smooth and
-              enjoyable development process.
-            </p>
-            <Button href="https://github.com/Blazity/next-enterprise" className="mr-3">
-              Get started
-            </Button>
-            <Button
-              href="https://vercel.com/new/git/external?repository-url=https://github.com/Blazity/next-enterprise"
-              intent="secondary"
-            >
-              Deploy Now
-            </Button>
-          </div>
+    <main className="bg-f1-charcoal min-h-screen text-f1-white px-6 py-8">
+      {/* Header */}
+      <header className="flex justify-between items-center mb-12">
+        <h1 className="text-4xl font-extrabold">TrackTalk</h1>
+        <Link href="/sign-in" className="text-f1-red hover:text-red-400 transition">
+          Sign In / Sign Up
+        </Link>
+      </header>
+
+      {/* GPs Section */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        {/* Next GP */}
+        <div className="bg-f1-card p-6 rounded-2xl">
+          <h2 className="text-2xl font-semibold text-f1-red mb-4">Next GP</h2>
+          {currentGP ? (
+            <>
+              <h3 className="text-xl">{currentGP.raceName}</h3>
+              <p className="text-sm text-gray-300">
+                {currentGP.Circuit.circuitName} — {currentGP.Circuit.Location.locality}
+              </p>
+              <p className="mt-2 text-sm text-gray-400">
+                {new Date(`${currentGP.date}T${currentGP.time}`).toLocaleString()}
+              </p>
+            </>
+          ) : (
+            <p>No upcoming race found.</p>
+          )}
         </div>
-      </section>
-      <section className="bg-white dark:bg-gray-900">
-        <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 sm:py-16 lg:px-6">
-          <div className="justify-center space-y-8 md:grid md:grid-cols-2 md:gap-12 md:space-y-0 lg:grid-cols-3">
-            {LP_GRID_ITEMS.map((singleItem) => (
-              <div key={singleItem.title} className="flex flex-col items-center justify-center text-center">
-                <div className="bg-primary-100 dark:bg-primary-900 mb-4 flex size-10 items-center justify-center rounded-full p-1.5 text-blue-700 lg:size-12">
-                  {singleItem.icon}
-                </div>
-                <h3 className="mb-2 text-xl font-bold dark:text-white">{singleItem.title}</h3>
-                <p className="text-gray-500 dark:text-gray-400">{singleItem.description}</p>
-              </div>
+
+        {/* Upcoming GPs */}
+        <div className="bg-f1-card p-6 rounded-2xl">
+          <h2 className="text-2xl font-semibold mb-4">Upcoming GPs</h2>
+          <ul className="space-y-2 text-gray-200">
+            {upcoming.slice(0, 5).map((r) => (
+              <li key={r.round} className="flex justify-between">
+                <span>{r.raceName}</span>
+                <span className="text-sm">{new Date(r.date).toLocaleDateString()}</span>
+              </li>
             ))}
-          </div>
+          </ul>
+        </div>
+
+        {/* past GPs */}
+        <div className="bg-f1-card p-6 rounded-2xl">
+          <h2 className="text-2xl font-semibold mb-4">Past GPs</h2>
+          <ul className="space-y-2 text-gray-200">
+            {past.slice(-5).reverse().map((r) => (
+              <li key={r.round} className="flex justify-between">
+                <span>{r.raceName}</span>
+                <span className="text-sm">{new Date(r.date).toLocaleDateString()}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
-    </>
-  )
+
+      {/* overall standings section */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+        {/* Drivers */}
+        <div className="bg-f1-card p-6 rounded-2xl overflow-x-auto">
+          <h2 className="text-2xl font-semibold text-f1-red mb-4">Driver Standings</h2>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="text-gray-300">
+                <th className="pr-4">#</th>
+                <th className="pr-4">Driver</th>
+                <th>Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {driverStandings.map((d) => (
+                <tr key={d.position} className="border-t border-gray-700">
+                  <td className="pr-4">{d.position}</td>
+                  <td className="pr-4">
+                    {d.Driver.givenName} {d.Driver.familyName}
+                  </td>
+                  <td>{d.points}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Constructors */}
+        <div className="bg-f1-card p-6 rounded-2xl overflow-x-auto">
+          <h2 className="text-2xl font-semibold text-f1-red mb-4">Constructor Standings</h2>
+          <table className="w-full text-left text-lg">
+            <thead>
+              <tr className="text-gray-300">
+                <th className="pr-4">#</th>
+                <th className="pr-4">Team</th>
+                <th>Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {constructorStandings.map((c) => (
+                <tr key={c.position} className="border-t border-gray-700">
+                  <td className="pr-4">{c.position}</td>
+                  <td className="pr-4">{c.Constructor.name}</td>
+                  <td>{c.points}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* recent threads */}
+      <section>
+        <h2 className="text-2xl font-semibold text-f1-red mb-4">Recent Threads</h2>
+
+        {/* unlocked threads */}
+        <ul className="space-y-4">
+          {unlockedThreads.map((t) => (
+            <li key={t.id} className="flex items-center bg-f1-card p-4 rounded-2xl">
+              <Link
+                href={`/gp/${t.gpId}/threads/${t.id}`}
+                className="flex-1 hover:text-f1-red transition"
+              >
+                {t.title}
+              </Link>
+              {t.pinned && <PinIcon />}
+            </li>
+          ))}
+        </ul>
+
+        {/* line separation */}
+        {lockedThreads.length > 0 && <div className="my-8 border-t border-gray-700" />}
+
+        {/* locked threads */}
+        <ul className="space-y-4">
+          {lockedThreads.map((t) => (
+            <li
+              key={t.id}
+              className="flex items-center bg-f1-card p-4 rounded-2xl opacity-70"
+            >
+              <Link
+                href={`/gp/${t.gpId}/threads/${t.id}`}
+                className="flex-1 hover:text-f1-red transition"
+              >
+                {t.title}
+              </Link>
+              <LockIcon />
+            </li>
+          ))}
+        </ul>
+      </section>
+    </main>
+  );
 }

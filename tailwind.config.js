@@ -15,6 +15,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // your existing primary palette
         primary: {
           50: "#eff6ff",
           100: "#dbeafe",
@@ -27,41 +28,25 @@ module.exports = {
           800: "#1e40af",
           900: "#1e3a8a",
         },
+        // F1-inspired custom colors
+        "f1-red":      "#e10600",
+        "f1-charcoal": "#0a0a0a",
+        "f1-gray":     "#2e2e2e",
+        "f1-card":     "#1e1e1e",
+        "f1-white":    "#ffffff",
       },
       fontFamily: {
         body: [
-          "Inter",
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "system-ui",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Arial",
-          "Noto Sans",
-          "sans-serif",
-          "Apple Color Emoji",
-          "Segoe UI Emoji",
-          "Segoe UI Symbol",
-          "Noto Color Emoji",
+          "Inter", "ui-sans-serif", "system-ui", "-apple-system",
+          "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans",
+          "sans-serif", "Apple Color Emoji", "Segoe UI Emoji",
+          "Segoe UI Symbol", "Noto Color Emoji",
         ],
         sans: [
-          "Inter",
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "system-ui",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Arial",
-          "Noto Sans",
-          "sans-serif",
-          "Apple Color Emoji",
-          "Segoe UI Emoji",
-          "Segoe UI Symbol",
-          "Noto Color Emoji",
+          "Inter", "ui-sans-serif", "system-ui", "-apple-system",
+          "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans",
+          "sans-serif", "Apple Color Emoji", "Segoe UI Emoji",
+          "Segoe UI Symbol", "Noto Color Emoji",
         ],
       },
       borderWidth: {

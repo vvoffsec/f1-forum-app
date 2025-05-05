@@ -1,0 +1,12 @@
+import React from 'react';
+
+export default function PinIcon() {
+  return (
+    <img
+      src="/icons/push-pin-green.png"
+      width={20}
+      height={20}
+      alt="Push pin"
+    />
+  );
+}
