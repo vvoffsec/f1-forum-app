@@ -1,8 +1,9 @@
 import React from 'react';
+import Image from "next/image";
 
 export default function PinIcon() {
   return (
-    <img
+    <Image
       src="/icons/push-pin-green.png"
       width={20}
       height={20}

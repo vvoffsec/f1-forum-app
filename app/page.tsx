@@ -98,15 +98,25 @@ interface ErgastConstructorStandingsResponse {
   };
 }
 
+// Typed response for race results
+interface ErgastResultsResponse {
+  MRData: {
+    RaceTable: {
+      Races: Array<{
+        Results: Array<{
+          Constructor: { name: string };
+        }>;
+      }>;
+    };
+  };
+}
+
 export default function MainPage() {
-  // Clerk hooks
   const { isLoaded, user } = useUser();
   const { openSignIn, openUserProfile } = useClerk();
 
-  // Dropdown menu
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Data
   const [races, setRaces] = useState<Race[]>([]);
   const [pastWinners, setPastWinners] = useState<Record<string, string>>({});
   const [driverStandings, setDriverStandings] = useState<DriverStanding[]>([]);
@@ -119,40 +129,42 @@ export default function MainPage() {
       const base = "https://api.jolpi.ca/ergast/f1";
       const now = new Date();
 
-      // ---- Races ----
+      // Races
       const resRaces = await fetch(`${base}/${year}/races.json`);
       const racesJson = (await resRaces.json()) as ErgastRacesResponse;
       const racesArr = racesJson.MRData.RaceTable.Races;
       setRaces(racesArr);
 
-      // ---- Past GP Winners (last 5) ----
+      // Past GP Winners (last 5)
       const pastRaces = racesArr.filter(r => new Date(`${r.date}T${r.time}`) < now);
       const recentPast = pastRaces.slice(-5);
       const winnerEntries = await Promise.all(
         recentPast.map(async (r) => {
           const res = await fetch(`${base}/${year}/${r.round}/results.json`);
-          const json = await res.json() as any;
-          const winner = json.MRData.RaceTable.Races[0].Results[0].Constructor.name;
+          const resultsJson = (await res.json()) as ErgastResultsResponse;
+          const winner =
+            resultsJson?.MRData?.RaceTable?.Races?.[0]?.Results?.[0]?.Constructor?.name
+            ?? "";
           return [r.round, winner] as [string, string];
         })
       );
       setPastWinners(Object.fromEntries(winnerEntries));
 
-      // ---- Driver Standings ----
+      // Driver Standings
       const resDS = await fetch(`${base}/${year}/driverstandings.json`);
       const dsJson = (await resDS.json()) as ErgastDriverStandingsResponse;
       setDriverStandings(
         dsJson.MRData.StandingsTable.StandingsLists[0]?.DriverStandings ?? []
       );
 
-      // ---- Constructor Standings ----
+      // Constructor Standings
       const resCS = await fetch(`${base}/${year}/constructorstandings.json`);
       const csJson = (await resCS.json()) as ErgastConstructorStandingsResponse;
       setConstructorStandings(
         csJson.MRData.StandingsTable.StandingsLists[0]?.ConstructorStandings ?? []
       );
 
-      // ---- Threads w/ 5-minute cache ----
+      // Threads w/ 5-minute cache
       const CACHE_KEY = "threads_cache";
       const CACHE_TIME_KEY = "threads_cache_time";
       const TTL = 5 * 60 * 1000;
@@ -174,16 +186,16 @@ export default function MainPage() {
 
   // Sort threads
   const unlockedThreads = threads
-    .filter((t) => !t.locked)
+    .filter(t => !t.locked)
     .sort((a, b) => +new Date(a.date) - +new Date(b.date));
   const lockedThreads = threads
-    .filter((t) => t.locked)
+    .filter(t => t.locked)
     .sort((a, b) => +new Date(a.date) - +new Date(b.date));
 
   // GPs
   const now = new Date();
-  const past = races.filter((r) => new Date(`${r.date}T${r.time}`) < now);
-  const upcoming = races.filter((r) => new Date(`${r.date}T${r.time}`) >= now);
+  const past = races.filter(r => new Date(`${r.date}T${r.time}`) < now);
+  const upcoming = races.filter(r => new Date(`${r.date}T${r.time}`) >= now);
   const currentGP = upcoming[0] ?? null;
 
   return (
@@ -220,14 +232,12 @@ export default function MainPage() {
               {isLoaded && (
                 <>
                   <button
-                    onClick={() => setMenuOpen((o) => !o)}
+                    onClick={() => setMenuOpen(o => !o)}
                     className="flex items-center text-f1-red hover:text-red-400 transition"
                   >
                     Hi, {user?.firstName ?? "there"}!
                     <svg
-                      className={`w-4 h-4 ml-1 transform transition ${
-                        menuOpen ? "rotate-180" : ""
-                      }`}
+                      className={`w-4 h-4 ml-1 transform transition ${menuOpen ? "rotate-180" : ""}`}
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
@@ -241,10 +251,7 @@ export default function MainPage() {
                   {menuOpen && (
                     <div className="absolute right-0 mt-2 w-40 bg-f1-card rounded-lg shadow-md z-10">
                       <button
-                        onClick={() => {
-                          openUserProfile();
-                          setMenuOpen(false);
-                        }}
+                        onClick={() => { openUserProfile(); setMenuOpen(false); }}
                         className="block w-full text-left px-4 py-2 text-sm text-f1-red hover:text-red-400 transition"
                       >
                         Account
@@ -287,7 +294,7 @@ export default function MainPage() {
           <div className="bg-f1-card p-6 rounded-2xl">
             <h2 className="text-2xl font-semibold mb-4">Upcoming GPs</h2>
             <ul className="space-y-2 text-gray-200">
-              {upcoming.slice(0, 5).map((r) => (
+              {upcoming.slice(0, 5).map(r => (
                 <li key={r.round} className="flex justify-between">
                   <span>{r.raceName}</span>
                   <span className="text-sm">{new Date(r.date).toLocaleDateString()}</span>
@@ -299,7 +306,7 @@ export default function MainPage() {
           <div className="bg-f1-card p-6 rounded-2xl">
             <h2 className="text-2xl font-semibold mb-4">Past GPs</h2>
             <ul className="space-y-2 text-gray-200">
-              {past.slice(-5).reverse().map((r) => {
+              {past.slice(-5).reverse().map(r => {
                 const winnerTeam = pastWinners[r.round] ?? "";
                 const dotColor = teamColors[winnerTeam] ?? "currentColor";
                 return (
@@ -308,7 +315,7 @@ export default function MainPage() {
                       <span
                         className="inline-block w-2 h-2 rounded-full mr-2"
                         style={{ backgroundColor: dotColor }}
-                        title={winnerTeam}
+                        title={winnerTeam || "Unknown"}
                       />
                       {r.raceName}
                     </span>
@@ -333,7 +340,7 @@ export default function MainPage() {
                 </tr>
               </thead>
               <tbody>
-                {driverStandings.map((d) => {
+                {driverStandings.map(d => {
                   const teamName = d.Constructors[0]?.name ?? "";
                   const dotColor = teamColors[teamName] ?? "currentColor";
                   return (
@@ -366,7 +373,7 @@ export default function MainPage() {
                 </tr>
               </thead>
               <tbody>
-                {constructorStandings.map((c) => {
+                {constructorStandings.map(c => {
                   const dotColor = teamColors[c.Constructor.name] ?? "currentColor";
                   return (
                     <tr key={c.position} className="border-t border-gray-700">
@@ -391,7 +398,7 @@ export default function MainPage() {
         <section>
           <h2 className="text-2xl font-semibold text-f1-red mb-4">Recent Threads</h2>
           <ul className="space-y-4">
-            {unlockedThreads.map((t) => (
+            {unlockedThreads.map(t => (
               <li key={t.id} className="flex items-center bg-f1-card p-4 rounded-2xl">
                 <Link
                   href={`/gp/${t.gpId}/threads/${t.id}`}
@@ -405,7 +412,7 @@ export default function MainPage() {
           </ul>
           {lockedThreads.length > 0 && <div className="my-8 border-t border-gray-700" />}
           <ul className="space-y-4">
-            {lockedThreads.map((t) => (
+            {lockedThreads.map(t => (
               <li
                 key={t.id}
                 className="flex items-center bg-f1-card p-4 rounded-2xl opacity-70"
