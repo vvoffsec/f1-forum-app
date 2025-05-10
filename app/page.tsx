@@ -98,7 +98,6 @@ interface ErgastConstructorStandingsResponse {
   };
 }
 
-// Typed response for race results
 interface ErgastResultsResponse {
   MRData: {
     RaceTable: {
@@ -116,7 +115,6 @@ export default function MainPage() {
   const { openSignIn, openUserProfile } = useClerk();
 
   const [menuOpen, setMenuOpen] = useState(false);
-
   const [races, setRaces] = useState<Race[]>([]);
   const [pastWinners, setPastWinners] = useState<Record<string, string>>({});
   const [driverStandings, setDriverStandings] = useState<DriverStanding[]>([]);
@@ -235,7 +233,7 @@ export default function MainPage() {
                     onClick={() => setMenuOpen(o => !o)}
                     className="flex items-center text-f1-red hover:text-red-400 transition"
                   >
-                    Hi, {user?.firstName ?? "there"}!
+                    Hi, {user?.username ?? "there"}!
                     <svg
                       className={`w-4 h-4 ml-1 transform transition ${menuOpen ? "rotate-180" : ""}`}
                       fill="none"
