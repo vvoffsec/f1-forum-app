@@ -34,7 +34,8 @@ export default function ChatPage() {
 	}
 
   const { openSignIn, openUserProfile } = useClerk();
-  const displayName = user?.fullName || user?.firstName || "Anon";
+  // const displayName = user?.fullName || user?.firstName || "Anon";
+  const displayName = user.username || "Anon";
   const [raceName, setRaceName] = useState("GP " + gpId);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");

@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client";
 
 import {
@@ -418,7 +417,7 @@ export default function MainPage() {
                 className="flex items-center bg-f1-card p-4 rounded-2xl opacity-70"
               >
                 <Link
-                  href={`/gp/${t.gpId}/threads/${t.id}`}
+                  href={`/gp/${t.gpId}/chat`}
                   className="flex-1 hover:text-f1-red transition"
                 >
                   {t.title}
