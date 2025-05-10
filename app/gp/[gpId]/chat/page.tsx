@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { useParams } from "next/navigation";
 import {
   useUser,
   useClerk,
@@ -9,6 +7,8 @@ import {
   SignedOut,
   SignOutButton,
 } from "@clerk/nextjs";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import io from "socket.io-client";
 
