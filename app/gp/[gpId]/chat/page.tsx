@@ -1,46 +1,41 @@
 "use client";
 
-import Link from "next/link";
-import { useParams } from "next/navigation";
 import {
-  useUser,
-  useClerk,
   SignedIn,
   SignedOut,
+  SignInButton,
   SignOutButton,
+  useUser,
 } from "@clerk/nextjs";
-import { useEffect, useState, useRef } from "react";
-import io from "socket.io-client";
-
-let socket: ReturnType<typeof io>;
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import * as Ably from "ably";
 
 type Msg = {
-  gpId?: string;
   author: string;
   text: string;
   createdAt: string;
 };
-type Thread = { id: string; title: string };
+
+type Thread = {
+  id: string;
+  title: string;
+};
 
 export default function ChatPage() {
   const params = useParams();
-  const raw = params.gpId;
-  const gpId = Array.isArray(raw) ? raw[0] : raw;
+  const gpId = Array.isArray(params.gpId) ? params.gpId[0] : params.gpId;
   if (!gpId) return <div className="p-8">Invalid GP ID</div>;
 
   const { isLoaded, user } = useUser();
-	if (!isLoaded || !user) {
-		return null;
-	}
+  if (!isLoaded || !user) return null;
 
-  const { openSignIn, openUserProfile } = useClerk();
-  const displayName = user?.fullName || user?.firstName || "Anon";
-  const [raceName, setRaceName] = useState("GP " + gpId);
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Ensure username is a string
+  const username = user.username ?? user.firstName ?? user.id;
 
+  // Race name state and fetch
+  const [raceName, setRaceName] = useState(`GP ${gpId}`);
   useEffect(() => {
     fetch("/api/threads?limit=100")
       .then((res) => res.json() as Promise<Thread[]>)
@@ -54,37 +49,11 @@ export default function ChatPage() {
       .catch(() => {});
   }, [gpId]);
 
-  // Socket.io: history + live
-  useEffect(() => {
-    socket = io(undefined, { path: "/socket.io", query: { gpId } });
-    socket.on("chat history", (history: Msg[]) => setMsgs(history));
-    socket.on("chat message", (m: Msg) => setMsgs((ms) => [...ms, m]));
-    return () => void socket.disconnect();
-  }, [gpId]);
-
-  // Auto scroll for new message
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs]);
-
-  const send = () => {
-    if (!input.trim() || !isLoaded) return;
-    const m: Msg = {
-      gpId,
-      author: displayName,
-      text: input.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    socket.emit("chat message", m);
-    setInput("");
-  };
-
   return (
     <div className="flex flex-col h-screen bg-f1-charcoal text-f1-white">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-f1-card">
         <div className="flex items-center space-x-4">
-          {/* Home button */}
           <Link
             href="/"
             className="text-f1-red hover:text-red-400 transition font-medium"
@@ -93,70 +62,94 @@ export default function ChatPage() {
           </Link>
           <h1 className="text-xl font-semibold">{raceName} Chat</h1>
         </div>
-
-        {/* Clerk Profile / Sign In */}
-        <div className="relative">
+        <div>
           <SignedOut>
-            <button
-              onClick={() => openSignIn()}
-              className="text-f1-red hover:text-red-400 transition"
-            >
-              Sign In
-            </button>
+            <SignInButton>
+              <button className="text-f1-red hover:text-red-400">Sign In</button>
+            </SignInButton>
           </SignedOut>
           <SignedIn>
-            {isLoaded && (
-              <>
-                <button
-                  onClick={() => setMenuOpen((o) => !o)}
-                  className="text-f1-red hover:text-red-400 transition flex items-center"
-                >
-                  Hi, {user.firstName || "there"}!
-                  <svg
-                    className={`w-4 h-4 ml-1 transform transition ${
-                      menuOpen ? "rotate-180" : ""
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {menuOpen && (
-                  <div className="absolute right-0 mt-2 w-40 bg-f1-card rounded-lg shadow-md z-10">
-                    <button
-                      onClick={() => {
-                        openUserProfile();
-                        setMenuOpen(false);
-                      }}
-                      className="block w-full text-left px-4 py-2 text-sm text-f1-red hover:text-red-400 transition"
-                    >
-                      Account
-                    </button>
-                    <SignOutButton>
-                      <button
-                        onClick={() => setMenuOpen(false)}
-                        className="block w-full text-left px-4 py-2 text-sm text-f1-red hover:text-red-400 transition"
-                      >
-                        Sign Out
-                      </button>
-                    </SignOutButton>
-                  </div>
-                )}
-              </>
-            )}
+            <div className="flex items-center space-x-4">
+              <span>Hi, {username}!</span>
+              <SignOutButton>
+                <button className="text-f1-red hover:text-red-400">Sign Out</button>
+              </SignOutButton>
+            </div>
           </SignedIn>
         </div>
       </header>
 
-      {/* Messages */}
+      <SignedIn>
+        <ChatWindow gpId={gpId} username={username} />
+      </SignedIn>
+      <SignedOut>
+        <div className="flex-1 p-8">
+          <p>Please sign in to join the chat.</p>
+        </div>
+      </SignedOut>
+    </div>
+  );
+}
+
+function ChatWindow({ gpId, username }: { gpId: string; username: string }) {
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [input, setInput] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Ably and channel refs
+  const ablyRef = useRef<Ably.Realtime | null>(null);
+  const channelRef = useRef<ReturnType<Ably.Realtime["channels"]["get"]> | null>(null);
+
+  useEffect(() => {
+    // Initialize Ably client
+    ablyRef.current = new Ably.Realtime({
+      key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
+      clientId: username,
+    });
+    channelRef.current = ablyRef.current.channels.get(`chat-${gpId}`);
+
+    // Load last 100 messages via promise API
+    channelRef.current.history({ limit: 100 })
+      .then((page) => {
+        const history = (page.items || []).map((m) => m.data as Msg);
+        setMsgs(history);
+      })
+      .catch((err) => {
+        console.error("Ably history error:", err);
+      });
+
+    // Subscribe to new messages
+    channelRef.current.subscribe((msg) => {
+      setMsgs((prev) => [...prev, msg.data as Msg]);
+    });
+
+    // Cleanup: only unsubscribe channel
+    return () => {
+      channelRef.current?.unsubscribe();
+    };
+  }, [gpId, username]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs]);
+
+  const send = () => {
+    if (!input.trim()) return;
+    const m: Msg = {
+      author: username,
+      text: input.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    channelRef.current?.publish("message", m)
+      .catch((err) => console.error("Publish failed:", err));
+    setInput("");
+  };
+
+  return (
+    <>
       <main className="flex-1 overflow-auto px-6 py-4 space-y-4">
         {msgs.map((m, i) => {
-          const isMe = m.author === displayName;
+          const isMe = m.author === username;
           return (
             <div
               key={i}
@@ -181,8 +174,6 @@ export default function ChatPage() {
         })}
         <div ref={bottomRef} />
       </main>
-
-      {/* Input bar */}
       <footer className="flex items-center px-4 py-3 bg-f1-card">
         <input
           type="text"
@@ -191,16 +182,15 @@ export default function ChatPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          disabled={!isLoaded}
         />
         <button
           onClick={send}
-          disabled={!input.trim() || !isLoaded}
+          disabled={!input.trim()}
           className="px-4 py-2 rounded-full bg-f1-red hover:bg-red-600 disabled:opacity-50"
         >
           Send
         </button>
       </footer>
-    </div>
+    </>
   );
 }
