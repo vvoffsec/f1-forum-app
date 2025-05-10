@@ -6,13 +6,16 @@ import {
   SignOutButton,
   useClerk,
   useUser,
+  useAuth,
 } from "@clerk/nextjs";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
+import { z } from "zod";
 
-let socket: ReturnType<typeof io>;
+const MAX_MESSAGE_LENGTH = 2000;
+const gpIdSchema = z.string().regex(/^[\w-]+$/, "Invalid GP ID format");
 
 type Msg = {
   gpId?: string;
@@ -25,26 +28,34 @@ type Thread = { id: string; title: string };
 export default function ChatPage() {
   const params = useParams();
   const raw = params.gpId;
-  const gpId = Array.isArray(raw) ? raw[0] : raw;
-  if (!gpId) return <div className="p-8">Invalid GP ID</div>;
+  const gpIdCandidate = Array.isArray(raw) ? raw[0] : raw;
+  const parsed = gpIdSchema.safeParse(gpIdCandidate);
+  if (!parsed.success) {
+    return <div className="p-8 text-red-400">Invalid GP ID</div>;
+  }
+  const gpId = parsed.data;
 
   const { isLoaded, user } = useUser();
-	if (!isLoaded || !user) {
-		return null;
-	}
-
+  const { getToken } = useAuth();
   const { openSignIn, openUserProfile } = useClerk();
-  // const displayName = user?.fullName || user?.firstName || "Anon";
-  const displayName = user.username || "Anon";
+
+  if (!isLoaded) return null;
+
+  const displayName = user?.username ?? "Anon";
   const [raceName, setRaceName] = useState("GP " + gpId);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Fetch race title
   useEffect(() => {
     fetch("/api/threads?limit=100")
-      .then((res) => res.json() as Promise<Thread[]>)
+      .then((res) => {
+        if (!res.ok) throw new Error("Network error");
+        return res.json() as Promise<Thread[]>;
+      })
       .then((threads) => {
         const t = threads.find((t) => t.id === gpId);
         if (t) {
@@ -55,28 +66,68 @@ export default function ChatPage() {
       .catch(() => {});
   }, [gpId]);
 
-  // Socket.io: history + live
+  // Socket.io connection effect
   useEffect(() => {
-    socket = io(undefined, { path: "/socket.io", query: { gpId } });
-    socket.on("chat history", (history: Msg[]) => setMsgs(history));
-    socket.on("chat message", (m: Msg) => setMsgs((ms) => [...ms, m]));
-    return () => void socket.disconnect();
-  }, [gpId]);
+    let cancelled = false;
 
-  // Auto scroll for new message
+    (async () => {
+      const token = await getToken();
+      if (cancelled) return;
+
+      // Tear down any existing socket
+      socketRef.current?.disconnect();
+
+      // Create new socket
+      const socket = io(undefined, {
+        path: "/socket.io",
+        transports: ["websocket"],
+        secure: true,
+        auth: { token },
+        query: { gpId },
+      });
+
+      // Defensive: clear any old listeners
+      socket.removeAllListeners();
+
+      // Register handlers
+      socket.on("chat history", (history: Msg[]) => {
+        setMsgs(history);
+      });
+
+      socket.on("chat message", (m: Msg) => {
+        if (typeof m.text === "string" && typeof m.author === "string") {
+          setMsgs((ms) => [...ms, m]);
+        }
+      });
+
+      socketRef.current = socket;
+    })();
+
+    return () => {
+      cancelled = true;
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+  }, [gpId, getToken]);
+
+  // Auto-scroll on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs]);
 
+  // Send a message
   const send = () => {
-    if (!input.trim() || !isLoaded) return;
+    const trimmed = input.trim().slice(0, MAX_MESSAGE_LENGTH);
+    if (!trimmed || !isLoaded) return;
+
     const m: Msg = {
       gpId,
       author: displayName,
-      text: input.trim(),
+      text: trimmed,
       createdAt: new Date().toISOString(),
     };
-    socket.emit("chat message", m);
+
+    socketRef.current?.emit("chat message", m);
     setInput("");
   };
 
@@ -85,7 +136,6 @@ export default function ChatPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-f1-card">
         <div className="flex items-center space-x-4">
-          {/* Home button */}
           <Link
             href="/"
             className="text-f1-red hover:text-red-400 transition font-medium"
@@ -95,7 +145,6 @@ export default function ChatPage() {
           <h1 className="text-xl font-semibold">{raceName} Chat</h1>
         </div>
 
-        {/* Clerk Profile / Sign In */}
         <div className="relative">
           <SignedOut>
             <button
@@ -106,49 +155,45 @@ export default function ChatPage() {
             </button>
           </SignedOut>
           <SignedIn>
-            {isLoaded && (
-              <>
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              className="text-f1-red hover:text-red-400 transition flex items-center"
+            >
+              Hi, {user?.firstName || "there"}!
+              <svg
+                className={`w-4 h-4 ml-1 transform transition ${
+                  menuOpen ? "rotate-180" : ""
+                }`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                viewBox="0 0 24 24"
+              >
+                <path d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-40 bg-f1-card rounded-lg shadow-md z-10">
                 <button
-                  onClick={() => setMenuOpen((o) => !o)}
-                  className="text-f1-red hover:text-red-400 transition flex items-center"
+                  onClick={() => {
+                    openUserProfile();
+                    setMenuOpen(false);
+                  }}
+                  className="block w-full text-left px-4 py-2 text-sm text-f1-red hover:text-red-400 transition"
                 >
-                  Hi, {user.firstName || "there"}!
-                  <svg
-                    className={`w-4 h-4 ml-1 transform transition ${
-                      menuOpen ? "rotate-180" : ""
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M19 9l-7 7-7-7" />
-                  </svg>
+                  Account
                 </button>
-                {menuOpen && (
-                  <div className="absolute right-0 mt-2 w-40 bg-f1-card rounded-lg shadow-md z-10">
-                    <button
-                      onClick={() => {
-                        openUserProfile();
-                        setMenuOpen(false);
-                      }}
-                      className="block w-full text-left px-4 py-2 text-sm text-f1-red hover:text-red-400 transition"
-                    >
-                      Account
-                    </button>
-                    <SignOutButton>
-                      <button
-                        onClick={() => setMenuOpen(false)}
-                        className="block w-full text-left px-4 py-2 text-sm text-f1-red hover:text-red-400 transition"
-                      >
-                        Sign Out
-                      </button>
-                    </SignOutButton>
-                  </div>
-                )}
-              </>
+                <SignOutButton>
+                  <button
+                    onClick={() => setMenuOpen(false)}
+                    className="block w-full text-left px-4 py-2 text-sm text-f1-red hover:text-red-400 transition"
+                  >
+                    Sign Out
+                  </button>
+                </SignOutButton>
+              </div>
             )}
           </SignedIn>
         </div>
@@ -176,7 +221,9 @@ export default function ChatPage() {
                   })}
                 </span>
               </div>
-              <p className="mt-1">{m.text}</p>
+              <p className="mt-1 break-words whitespace-pre-wrap">
+                {m.text}
+              </p>
             </div>
           );
         })}
@@ -187,6 +234,7 @@ export default function ChatPage() {
       <footer className="flex items-center px-4 py-3 bg-f1-card">
         <input
           type="text"
+          maxLength={MAX_MESSAGE_LENGTH}
           className="flex-1 mr-2 px-4 py-2 rounded-full bg-gray-800 placeholder-gray-400 focus:outline-none"
           placeholder="Type a message…"
           value={input}
@@ -194,6 +242,9 @@ export default function ChatPage() {
           onKeyDown={(e) => e.key === "Enter" && send()}
           disabled={!isLoaded}
         />
+        <span className="text-sm text-gray-400 mr-2">
+          {input.length}/{MAX_MESSAGE_LENGTH}
+        </span>
         <button
           onClick={send}
           disabled={!input.trim() || !isLoaded}

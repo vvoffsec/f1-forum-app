@@ -2,3 +2,28 @@
     /* Clerk shimmer override */
     --ck-color-shimmer: #444444;
   }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #444 #1a1a1a;
+}
+
+/* Webkit browsers */
+*::-webkit-scrollbar {
+  width: 8px;
+  background-color: #1a1a1a; /* track background */
+}
+
+*::-webkit-scrollbar-track {
+  background-color: #1a1a1a;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #444;       /* thumb color */
+  border-radius: 4px;
+  border: 2px solid #1a1a1a;    /* give it some inset padding */
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #666;
+}
