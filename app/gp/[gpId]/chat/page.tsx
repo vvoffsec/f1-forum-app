@@ -4,9 +4,9 @@ import {
   SignedIn,
   SignedOut,
   SignOutButton,
+  useAuth,
   useClerk,
   useUser,
-  useAuth,
 } from "@clerk/nextjs";
 import Link from "next/link";
 import { useParams } from "next/navigation";
