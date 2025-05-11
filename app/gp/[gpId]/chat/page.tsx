@@ -1,22 +1,30 @@
 // app/gp/[gpId]/chat/page.tsx
 "use client";
 
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
+  useUser,
+  useClerk,
   SignedIn,
   SignedOut,
   SignInButton,
   SignOutButton,
-  useClerk,
-  useUser,
 } from "@clerk/nextjs";
-import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import * as Ably from "ably";
+import { v4 as uuidv4 } from "uuid";
 
 type Msg = {
+  messageId: string;
   author: string;
   text: string;
+  createdAt: string;
+};
+type Reaction = {
+  messageId: string;
+  emoji: string;
+  user: string;
   createdAt: string;
 };
 type Thread = { id: string; title: string };
@@ -30,9 +38,11 @@ export default function ChatPage() {
   const { isLoaded, user } = useUser();
   const { openSignIn, openUserProfile } = useClerk();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [raceName, setRaceName] = useState("GP " + gpId);
+  const [raceName, setRaceName] = useState(`GP ${gpId}`);
+  if (!isLoaded) return null;
+  const username = user?.username ?? user?.firstName ?? "Anon";
 
-  // fetch real race title
+  // Load the human‑friendly GP title
   useEffect(() => {
     fetch("/api/threads?limit=100")
       .then((res) => res.json() as Promise<Thread[]>)
@@ -40,24 +50,18 @@ export default function ChatPage() {
         const t = threads.find((t) => t.id === gpId);
         if (t) {
           const parts = t.title.split("--").map((s) => s.trim());
-          setRaceName(parts[1] ?? t.title);
+          setRaceName(parts[1] || t.title);
         }
       })
-      .catch(() => {});
+      .catch(console.error);
   }, [gpId]);
-
-  if (!isLoaded) return null;
-  const username = user?.username ?? user?.firstName ?? "";
 
   return (
     <div className="flex flex-col h-screen bg-f1-charcoal text-f1-white">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-f1-card">
         <div className="flex items-center space-x-4">
-          <Link
-            href="/"
-            className="text-f1-red hover:text-red-400 transition font-medium"
-          >
+          <Link href="/" className="text-f1-red hover:text-red-400 font-medium">
             ← Home
           </Link>
           <h1 className="text-xl font-semibold">{raceName} Chat</h1>
@@ -71,9 +75,9 @@ export default function ChatPage() {
           <SignedIn>
             <button
               onClick={() => setMenuOpen((o) => !o)}
-              className="flex items-center text-f1-red hover:text-red-400 transition"
+              className="flex items-center text-f1-red hover:text-red-400"
             >
-              Hi, {username || "there"}!
+              Hi, {username}
               <svg
                 className={`w-4 h-4 ml-1 transform transition ${
                   menuOpen ? "rotate-180" : ""
@@ -81,8 +85,6 @@ export default function ChatPage() {
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
                 viewBox="0 0 24 24"
               >
                 <path d="M19 9l-7 7-7-7" />
@@ -128,66 +130,122 @@ function ChatWindow({
   username: string;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [reactions, setReactions] = useState<Reaction[]>([]);
   const [input, setInput] = useState("");
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const ablyRef = useRef<Ably.Realtime | null>(null);
   const chRef = useRef<ReturnType<Ably.Realtime["channels"]["get"]> | null>(
     null
   );
 
   useEffect(() => {
-    // initialize Ably
     ablyRef.current = new Ably.Realtime({
       key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
       clientId: username,
     });
     chRef.current = ablyRef.current.channels.get(`chat-${gpId}`);
 
-    // load last 100, then reverse so oldest → newest
+    // Process history: messages + reactions + unreactions
     chRef.current
       .history({ limit: 100 })
       .then((page) => {
-        const items = (page.items || []).map((i) => i.data as Msg);
-        setMsgs(items.reverse());
+        const histMsgs: Msg[] = [];
+        const histReacts: Reaction[] = [];
+        page.items.forEach((item) => {
+          if (item.name === "message") {
+            histMsgs.push(item.data as Msg);
+          } else if (item.name === "reaction") {
+            histReacts.push(item.data as Reaction);
+          } else if (item.name === "unreaction") {
+            const u = item.data as Reaction;
+            const idx = histReacts.findIndex(
+              (r) =>
+                r.messageId === u.messageId &&
+                r.emoji === u.emoji &&
+                r.user === u.user
+            );
+            if (idx !== -1) histReacts.splice(idx, 1);
+          }
+        });
+        // show oldest → newest
+        setMsgs(histMsgs.reverse());
+        setReactions(histReacts);
       })
-      .catch((err) => console.error("Ably history error", err));
+      .catch(console.error);
 
-    // subscribe live
-    chRef.current.subscribe((msg) => {
-      setMsgs((prev) => [...prev, msg.data as Msg]);
-    });
+    // Live updates
+    chRef.current.subscribe("message", (m) =>
+      setMsgs((ms) => [...ms, m.data as Msg])
+    );
+    chRef.current.subscribe("reaction", (m) =>
+      setReactions((rs) => [...rs, m.data as Reaction])
+    );
+    chRef.current.subscribe("unreaction", (m) =>
+      setReactions((rs) =>
+        rs.filter(
+          (r) =>
+            !(
+              r.messageId === (m.data as Reaction).messageId &&
+              r.emoji === (m.data as Reaction).emoji &&
+              r.user === (m.data as Reaction).user
+            )
+        )
+      )
+    );
 
     return () => {
       chRef.current?.unsubscribe();
-      // don’t close() here to avoid runtime errors
+      ablyRef.current?.close();
     };
   }, [gpId, username]);
 
-  // auto scroll
+  // auto-scroll when messages or reactions change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs]);
+  }, [msgs, reactions]);
 
   const send = () => {
     if (!input.trim()) return;
-    const m: Msg = {
+    const message: Msg = {
+      messageId: uuidv4(),
       author: username,
       text: input.trim(),
       createdAt: new Date().toISOString(),
     };
-    chRef.current?.publish("message", m).catch((e) => console.error(e));
+    chRef.current?.publish("message", message);
     setInput("");
+  };
+
+  const react = (messageId: string, emoji: string) => {
+    const already = reactions.some(
+      (r) =>
+        r.messageId === messageId &&
+        r.emoji === emoji &&
+        r.user === username
+    );
+    const event: Reaction = {
+      messageId,
+      emoji,
+      user: username,
+      createdAt: new Date().toISOString(),
+    };
+    chRef.current?.publish(already ? "unreaction" : "reaction", event);
   };
 
   return (
     <div className="flex-1 flex flex-col">
       <main className="flex-1 overflow-auto px-6 py-4 space-y-4">
-        {msgs.map((m, i) => (
-          <MessageBubble key={i} msg={m} username={username} />
+        {msgs.map((m) => (
+          <MessageBubble
+            key={m.messageId}
+            msg={m}
+            username={username}
+            reactions={reactions}
+            onReact={react}
+          />
         ))}
         <div ref={bottomRef} />
       </main>
-
       <footer className="flex items-center px-4 py-3 bg-f1-card">
         <input
           type="text"
@@ -212,14 +270,18 @@ function ChatWindow({
 function MessageBubble({
   msg,
   username,
+  reactions,
+  onReact,
 }: {
   msg: Msg;
   username: string;
+  reactions: Reaction[];
+  onReact: (messageId: string, emoji: string) => void;
 }) {
-  const [timeStr, setTimeStr] = useState("");
   const isMe = msg.author === username;
+  const [timeStr, setTimeStr] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  // defer the timestamp until after hydration
   useEffect(() => {
     setTimeStr(
       new Date(msg.createdAt).toLocaleTimeString([], {
@@ -229,17 +291,68 @@ function MessageBubble({
     );
   }, [msg.createdAt]);
 
+  // count per-emoji
+  const counts = reactions
+    .filter((r) => r.messageId === msg.messageId)
+    .reduce((acc, r) => {
+      acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
   return (
     <div
-      className={`max-w-[75%] p-3 rounded-xl break-words ${
-        isMe ? "ml-auto bg-f1-red text-white" : "mr-auto bg-gray-700 text-gray-100"
+      className={`relative group max-w-[75%] mx-2 ${
+        isMe ? "ml-auto" : "mr-auto"
       }`}
     >
-      <div className="flex items-baseline justify-between">
-        <span className="font-medium">{msg.author}</span>
-        <span className="ml-2 text-xs text-gray-400">{timeStr}</span>
+      {/* bubble */}
+      <div
+        className={`relative p-3 rounded-xl break-words ${
+          isMe ? "bg-f1-red text-white" : "bg-gray-700 text-gray-100"
+        }`}
+      >
+        <div className="flex items-baseline justify-between">
+          <span className="font-medium">{msg.author}</span>
+          <span className="ml-2 text-xs text-gray-400">{timeStr}</span>
+        </div>
+        <p className="mt-1 break-all">{msg.text}</p>
+
+        {/* overlay counts */}
+        <div className="absolute bottom-1 right-2 flex space-x-1 bg-black bg-opacity-50 rounded-full px-2 py-0.5 text-xs">
+          {Object.entries(counts).map(([emoji, count]) => (
+            <span key={emoji} className="flex items-center space-x-1">
+              <span>{emoji}</span>
+              <span>{count}</span>
+            </span>
+          ))}
+        </div>
       </div>
-      <p className="mt-1 break-all">{msg.text}</p>
+
+      {/* plus button */}
+      <button
+        onClick={() => setMenuOpen((o) => !o)}
+        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-f1-card p-1 rounded-full"
+      >
+        +
+      </button>
+
+      {/* emoji picker */}
+      {menuOpen && (
+        <div className="absolute top-full right-0 mt-1 bg-f1-card p-2 rounded shadow-md z-10 flex space-x-2">
+          {["👍", "👎", "❤️"].map((emoji) => (
+            <button
+              key={emoji}
+              onClick={() => {
+                onReact(msg.messageId, emoji);
+                setMenuOpen(false);
+              }}
+              className="p-1 hover:bg-gray-600 rounded"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
