@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  SignInButton,
-  SignOutButton,
   SignedIn,
   SignedOut,
+  SignInButton,
+  SignOutButton,
   useClerk,
   useUser,
 } from "@clerk/nextjs";
