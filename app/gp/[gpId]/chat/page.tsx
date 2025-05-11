@@ -1,21 +1,26 @@
-// app/gp/[gpId]/chat/page.tsx
 "use client";
 
+import {
+  SignInButton,
+  SignOutButton,
+  SignedIn,
+  SignedOut,
+  useClerk,
+  useUser,
+} from "@clerk/nextjs";
+import { Realtime } from "ably";
+import { Filter } from "bad-words";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  useUser,
-  useClerk,
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  SignOutButton,
-} from "@clerk/nextjs";
-import { useEffect, useState, useRef, ChangeEvent, KeyboardEvent } from "react";
-import { Realtime } from "ably";
-import { Filter } from "bad-words";
+  ChangeEvent,
+  KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { v4 as uuidv4 } from "uuid";
-import { motion, AnimatePresence } from "framer-motion";
 
 type Msg = {
   messageId: string;
