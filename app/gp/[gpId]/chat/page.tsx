@@ -14,6 +14,7 @@ import {
 import { useEffect, useState, useRef } from "react";
 import * as Ably from "ably";
 import { v4 as uuidv4 } from "uuid";
+import { motion, AnimatePresence } from "framer-motion";
 
 type Msg = {
   messageId: string;
@@ -21,13 +22,18 @@ type Msg = {
   text: string;
   createdAt: string;
 };
+
 type Reaction = {
   messageId: string;
   emoji: string;
   user: string;
   createdAt: string;
 };
-type Thread = { id: string; title: string };
+
+type Thread = {
+  id: string;
+  title: string;
+};
 
 export default function ChatPage() {
   const params = useParams();
@@ -40,7 +46,7 @@ export default function ChatPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [raceName, setRaceName] = useState(`GP ${gpId}`);
   if (!isLoaded) return null;
-  const username = user?.username ?? user?.firstName ?? "Anon";
+  const username = user?.username || user?.firstName || "Anon";
 
   useEffect(() => {
     fetch("/api/threads?limit=100")
@@ -57,8 +63,8 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-screen bg-f1-charcoal text-f1-white">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-f1-card">
+      {/* fixed header */}
+      <header className="flex items-center justify-between px-6 py-4 bg-f1-card flex-shrink-0">
         <div className="flex items-center space-x-4">
           <Link href="/" className="text-f1-red hover:text-red-400 font-medium">
             ← Home
@@ -138,12 +144,14 @@ function ChatWindow({
   );
 
   useEffect(() => {
+    // initialize Ably Realtime client
     ablyRef.current = new Ably.Realtime({
       key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
       clientId: username,
     });
     chRef.current = ablyRef.current.channels.get(`chat-${gpId}`);
 
+    // load history
     chRef.current
       .history({ limit: 100 })
       .then((page) => {
@@ -170,6 +178,7 @@ function ChatWindow({
       })
       .catch(console.error);
 
+    // subscribe for real-time updates
     chRef.current.subscribe("message", (m) =>
       setMsgs((ms) => [...ms, m.data as Msg])
     );
@@ -190,8 +199,15 @@ function ChatWindow({
     );
 
     return () => {
+      // cleanup: unsubscribe
       chRef.current?.unsubscribe();
-      ablyRef.current?.close();
+
+      // safely close connection (no args)
+      try {
+        ablyRef.current?.close();
+      } catch (err) {
+        // ignore expected "Connection closed" error
+      }
     };
   }, [gpId, username]);
 
@@ -229,6 +245,7 @@ function ChatWindow({
 
   return (
     <div className="flex-1 flex flex-col">
+      {/* messages */}
       <main className="flex-1 overflow-auto px-6 py-4 space-y-4">
         {msgs.map((m) => (
           <MessageBubble
@@ -241,7 +258,9 @@ function ChatWindow({
         ))}
         <div ref={bottomRef} />
       </main>
-      <footer className="flex items-center px-6 py-3 bg-f1-card">
+
+      {/* input */}
+      <footer className="flex items-center px-6 py-3 bg-f1-card flex-shrink-0">
         <input
           type="text"
           className="flex-1 mr-2 px-4 py-2 rounded-full bg-gray-800 placeholder-gray-400 focus:outline-none"
@@ -299,7 +318,7 @@ function MessageBubble({
         isMe ? "ml-auto" : "mr-auto"
       }`}
     >
-      {/* Chat bubble */}
+      {/* bubble */}
       <div
         className={`relative p-3 rounded-xl break-words ${
           isMe ? "bg-f1-red text-white" : "bg-gray-700 text-gray-100"
@@ -311,40 +330,67 @@ function MessageBubble({
         </div>
         <p className="mt-1 break-all">{msg.text}</p>
 
-        {/* + moved into overlay bar */}
+        {/* reactions bar */}
         <div className="absolute bottom-1 right-2 flex items-center space-x-2 bg-black bg-opacity-50 rounded-full px-2 py-0.5 text-xs">
-          {Object.entries(counts).map(([emoji, count]) => (
-            <span key={emoji} className="flex items-center space-x-1">
-              <span>{emoji}</span>
-              <span>{count}</span>
-            </span>
-          ))}
-          <button
+          <AnimatePresence initial={false}>
+            {Object.entries(counts).map(([emoji, count]) => (
+              <motion.div
+                key={emoji}
+                className="flex items-center space-x-1"
+                layout
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              >
+                <span>{emoji}</span>
+                <motion.span
+                  key={count}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {count}
+                </motion.span>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          <motion.button
             onClick={() => setMenuOpen((o) => !o)}
             className="px-1 hover:bg-gray-600 rounded"
+            whileTap={{ scale: 0.9 }}
           >
             +
-          </button>
+          </motion.button>
         </div>
       </div>
 
-      {/* Emoji picker */}
-      {menuOpen && (
-        <div className="absolute bottom-8 right-0 bg-f1-card p-2 rounded shadow-md z-10 flex space-x-2">
-          {["👍", "👎", "❤️"].map((emoji) => (
-            <button
-              key={emoji}
-              onClick={() => {
-                onReact(msg.messageId, emoji);
-                setMenuOpen(false);
-              }}
-              className="p-1 hover:bg-gray-600 rounded"
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* emoji picker */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.15 }}
+            className="absolute bottom-8 right-0 bg-f1-card p-2 rounded shadow-md z-10 flex space-x-2"
+          >
+            {["👍", "👎", "❤️"].map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => {
+                  onReact(msg.messageId, emoji);
+                  setMenuOpen(false);
+                }}
+                className="p-1 hover:bg-gray-600 rounded"
+              >
+                {emoji}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
