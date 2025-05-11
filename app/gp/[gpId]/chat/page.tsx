@@ -42,7 +42,6 @@ export default function ChatPage() {
   if (!isLoaded) return null;
   const username = user?.username ?? user?.firstName ?? "Anon";
 
-  // Load the human‑friendly GP title
   useEffect(() => {
     fetch("/api/threads?limit=100")
       .then((res) => res.json() as Promise<Thread[]>)
@@ -145,7 +144,6 @@ function ChatWindow({
     });
     chRef.current = ablyRef.current.channels.get(`chat-${gpId}`);
 
-    // Process history: messages + reactions + unreactions
     chRef.current
       .history({ limit: 100 })
       .then((page) => {
@@ -167,13 +165,11 @@ function ChatWindow({
             if (idx !== -1) histReacts.splice(idx, 1);
           }
         });
-        // show oldest → newest
         setMsgs(histMsgs.reverse());
         setReactions(histReacts);
       })
       .catch(console.error);
 
-    // Live updates
     chRef.current.subscribe("message", (m) =>
       setMsgs((ms) => [...ms, m.data as Msg])
     );
@@ -199,7 +195,6 @@ function ChatWindow({
     };
   }, [gpId, username]);
 
-  // auto-scroll when messages or reactions change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, reactions]);
@@ -246,7 +241,7 @@ function ChatWindow({
         ))}
         <div ref={bottomRef} />
       </main>
-      <footer className="flex items-center px-4 py-3 bg-f1-card">
+      <footer className="flex items-center px-6 py-3 bg-f1-card">
         <input
           type="text"
           className="flex-1 mr-2 px-4 py-2 rounded-full bg-gray-800 placeholder-gray-400 focus:outline-none"
@@ -291,7 +286,6 @@ function MessageBubble({
     );
   }, [msg.createdAt]);
 
-  // count per-emoji
   const counts = reactions
     .filter((r) => r.messageId === msg.messageId)
     .reduce((acc, r) => {
@@ -305,7 +299,7 @@ function MessageBubble({
         isMe ? "ml-auto" : "mr-auto"
       }`}
     >
-      {/* bubble */}
+      {/* Chat bubble */}
       <div
         className={`relative p-3 rounded-xl break-words ${
           isMe ? "bg-f1-red text-white" : "bg-gray-700 text-gray-100"
@@ -317,28 +311,26 @@ function MessageBubble({
         </div>
         <p className="mt-1 break-all">{msg.text}</p>
 
-        {/* overlay counts */}
-        <div className="absolute bottom-1 right-2 flex space-x-1 bg-black bg-opacity-50 rounded-full px-2 py-0.5 text-xs">
+        {/* + moved into overlay bar */}
+        <div className="absolute bottom-1 right-2 flex items-center space-x-2 bg-black bg-opacity-50 rounded-full px-2 py-0.5 text-xs">
           {Object.entries(counts).map(([emoji, count]) => (
             <span key={emoji} className="flex items-center space-x-1">
               <span>{emoji}</span>
               <span>{count}</span>
             </span>
           ))}
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className="px-1 hover:bg-gray-600 rounded"
+          >
+            +
+          </button>
         </div>
       </div>
 
-      {/* plus button */}
-      <button
-        onClick={() => setMenuOpen((o) => !o)}
-        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-f1-card p-1 rounded-full"
-      >
-        +
-      </button>
-
-      {/* emoji picker */}
+      {/* Emoji picker */}
       {menuOpen && (
-        <div className="absolute top-full right-0 mt-1 bg-f1-card p-2 rounded shadow-md z-10 flex space-x-2">
+        <div className="absolute bottom-8 right-0 bg-f1-card p-2 rounded shadow-md z-10 flex space-x-2">
           {["👍", "👎", "❤️"].map((emoji) => (
             <button
               key={emoji}
