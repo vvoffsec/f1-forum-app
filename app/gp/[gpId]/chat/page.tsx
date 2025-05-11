@@ -15,6 +15,7 @@ import { useEffect, useState, useRef } from "react";
 import * as Ably from "ably";
 import { v4 as uuidv4 } from "uuid";
 import { motion, AnimatePresence } from "framer-motion";
+import { Filter } from "bad-words";
 
 type Msg = {
   messageId: string;
@@ -134,24 +135,40 @@ function ChatWindow({
   gpId: string;
   username: string;
 }) {
+  // —— CONFIGURATION ——
+  const MAX_CHAR_LIMIT = 1000;
+  const RATE_LIMIT_COUNT = 10;
+  const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 60 seconds
+  const filter = new Filter();
+
+  // —— STATE ——
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [input, setInput] = useState("");
+  const [timestamps, setTimestamps] = useState<number[]>([]);
+  const [alert, setAlert] = useState<{ id: number; text: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const ablyRef = useRef<Ably.Realtime | null>(null);
   const chRef = useRef<ReturnType<Ably.Realtime["channels"]["get"]> | null>(
     null
   );
 
+  const showAlert = (text: string) => {
+    const id = Date.now();
+    setAlert({ id, text });
+    setTimeout(() => {
+      setAlert((cur) => (cur?.id === id ? null : cur));
+    }, 5000);
+  };
+
+  // —— ABLY SETUP ——
   useEffect(() => {
-    // initialize Ably Realtime client
     ablyRef.current = new Ably.Realtime({
       key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
       clientId: username,
     });
     chRef.current = ablyRef.current.channels.get(`chat-${gpId}`);
 
-    // load history
     chRef.current
       .history({ limit: 100 })
       .then((page) => {
@@ -178,7 +195,6 @@ function ChatWindow({
       })
       .catch(console.error);
 
-    // subscribe for real-time updates
     chRef.current.subscribe("message", (m) =>
       setMsgs((ms) => [...ms, m.data as Msg])
     );
@@ -199,14 +215,11 @@ function ChatWindow({
     );
 
     return () => {
-      // cleanup: unsubscribe
       chRef.current?.unsubscribe();
-
-      // safely close connection (no args)
       try {
         ablyRef.current?.close();
-      } catch (err) {
-        // ignore expected "Connection closed" error
+      } catch {
+        //
       }
     };
   }, [gpId, username]);
@@ -215,16 +228,41 @@ function ChatWindow({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, reactions]);
 
+  // —— SEND HANDLER ——
   const send = () => {
-    if (!input.trim()) return;
+    const text = input.trim();
+    const now = Date.now();
+
+    // rate limit cleanup
+    const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length >= RATE_LIMIT_COUNT) {
+      showAlert("You’re sending messages too quickly.");
+      return;
+    }
+
+    if (!text) return;
+
+    // char limit
+    if (text.length > MAX_CHAR_LIMIT) {
+      showAlert(`Only ${MAX_CHAR_LIMIT} characters allowed.`);
+      return;
+    }
+
+    // profanity filter
+    if (filter.isProfane(text)) {
+      showAlert("Please remove any profanity.");
+      return;
+    }
+
     const message: Msg = {
       messageId: uuidv4(),
       author: username,
-      text: input.trim(),
+      text,
       createdAt: new Date().toISOString(),
     };
     chRef.current?.publish("message", message);
     setInput("");
+    setTimestamps([...recent, now]);
   };
 
   const react = (messageId: string, emoji: string) => {
@@ -245,6 +283,28 @@ function ChatWindow({
 
   return (
     <div className="flex-1 flex flex-col">
+      {/* notification */}
+      <AnimatePresence>
+        {alert && (
+          <motion.div
+            key={alert.id}
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.2 }}
+            className="fixed top-16 left-1/2 transform -translate-x-1/2 bg-f1-red bg-opacity-90 text-white px-4 py-2 rounded shadow-md z-50"
+          >
+            <div className="text-sm">{alert.text}</div>
+            <motion.div
+              initial={{ width: "100%" }}
+              animate={{ width: "0%" }}
+              transition={{ duration: 5, ease: "linear" }}
+              className="h-1 bg-white mt-1 rounded"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* messages */}
       <main className="flex-1 overflow-auto px-6 py-4 space-y-4">
         {msgs.map((m) => (
@@ -266,9 +326,17 @@ function ChatWindow({
           className="flex-1 mr-2 px-4 py-2 rounded-full bg-gray-800 placeholder-gray-400 focus:outline-none"
           placeholder="Type a message…"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            if (e.target.value.length <= MAX_CHAR_LIMIT) {
+              setInput(e.target.value);
+            }
+          }}
           onKeyDown={(e) => e.key === "Enter" && send()}
         />
+        {/* character count */}
+        <span className="text-sm text-gray-400 mr-4">
+          {input.length}/{MAX_CHAR_LIMIT}
+        </span>
         <button
           onClick={send}
           disabled={!input.trim()}
@@ -318,7 +386,6 @@ function MessageBubble({
         isMe ? "ml-auto" : "mr-auto"
       }`}
     >
-      {/* bubble */}
       <div
         className={`relative p-3 rounded-xl break-words ${
           isMe ? "bg-f1-red text-white" : "bg-gray-700 text-gray-100"
@@ -330,7 +397,6 @@ function MessageBubble({
         </div>
         <p className="mt-1 break-all">{msg.text}</p>
 
-        {/* reactions bar */}
         <div className="absolute bottom-1 right-2 flex items-center space-x-2 bg-black bg-opacity-50 rounded-full px-2 py-0.5 text-xs">
           <AnimatePresence initial={false}>
             {Object.entries(counts).map(([emoji, count]) => (
@@ -366,7 +432,6 @@ function MessageBubble({
         </div>
       </div>
 
-      {/* emoji picker */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
