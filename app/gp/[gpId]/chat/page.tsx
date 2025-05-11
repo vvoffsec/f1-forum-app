@@ -11,11 +11,11 @@ import {
   SignInButton,
   SignOutButton,
 } from "@clerk/nextjs";
-import { useEffect, useState, useRef } from "react";
-import * as Ably from "ably";
+import { useEffect, useState, useRef, ChangeEvent, KeyboardEvent } from "react";
+import { Realtime } from "ably";
+import { Filter } from "bad-words";
 import { v4 as uuidv4 } from "uuid";
 import { motion, AnimatePresence } from "framer-motion";
-import { Filter } from "bad-words";
 
 type Msg = {
   messageId: string;
@@ -46,6 +46,7 @@ export default function ChatPage() {
   const { openSignIn, openUserProfile } = useClerk();
   const [menuOpen, setMenuOpen] = useState(false);
   const [raceName, setRaceName] = useState(`GP ${gpId}`);
+
   if (!isLoaded) return null;
   const username = user?.username || user?.firstName || "Anon";
 
@@ -64,7 +65,6 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-screen bg-f1-charcoal text-f1-white">
-      {/* fixed header */}
       <header className="flex items-center justify-between px-6 py-4 bg-f1-card flex-shrink-0">
         <div className="flex items-center space-x-4">
           <Link href="/" className="text-f1-red hover:text-red-400 font-medium">
@@ -85,9 +85,7 @@ export default function ChatPage() {
             >
               Hi, {username}
               <svg
-                className={`w-4 h-4 ml-1 transform transition ${
-                  menuOpen ? "rotate-180" : ""
-                }`}
+                className={`w-4 h-4 ml-1 transform transition ${menuOpen ? "rotate-180" : ""}`}
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
@@ -135,23 +133,20 @@ function ChatWindow({
   gpId: string;
   username: string;
 }) {
-  // —— CONFIGURATION ——
   const MAX_CHAR_LIMIT = 1000;
   const RATE_LIMIT_COUNT = 10;
-  const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 60 seconds
+  const RATE_LIMIT_WINDOW_MS = 60 * 1000;
   const filter = new Filter();
 
-  // —— STATE ——
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [input, setInput] = useState("");
   const [timestamps, setTimestamps] = useState<number[]>([]);
   const [alert, setAlert] = useState<{ id: number; text: string } | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
-  const ablyRef = useRef<Ably.Realtime | null>(null);
-  const chRef = useRef<ReturnType<Ably.Realtime["channels"]["get"]> | null>(
-    null
-  );
+  const ablyRef = useRef<Realtime | null>(null);
+  const chRef = useRef<ReturnType<Realtime["channels"]["get"]> | null>(null);
 
   const showAlert = (text: string) => {
     const id = Date.now();
@@ -161,9 +156,8 @@ function ChatWindow({
     }, 5000);
   };
 
-  // —— ABLY SETUP ——
   useEffect(() => {
-    ablyRef.current = new Ably.Realtime({
+    ablyRef.current = new Realtime({
       key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
       clientId: username,
     });
@@ -216,11 +210,7 @@ function ChatWindow({
 
     return () => {
       chRef.current?.unsubscribe();
-      try {
-        ablyRef.current?.close();
-      } catch {
-        //
-      }
+      ablyRef.current?.close();
     };
   }, [gpId, username]);
 
@@ -228,27 +218,20 @@ function ChatWindow({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, reactions]);
 
-  // —— SEND HANDLER ——
   const send = () => {
     const text = input.trim();
     const now = Date.now();
-
-    // rate limit cleanup
     const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+
     if (recent.length >= RATE_LIMIT_COUNT) {
       showAlert("You’re sending messages too quickly.");
       return;
     }
-
     if (!text) return;
-
-    // char limit
     if (text.length > MAX_CHAR_LIMIT) {
       showAlert(`Only ${MAX_CHAR_LIMIT} characters allowed.`);
       return;
     }
-
-    // profanity filter
     if (filter.isProfane(text)) {
       showAlert("Please remove any profanity.");
       return;
@@ -267,10 +250,7 @@ function ChatWindow({
 
   const react = (messageId: string, emoji: string) => {
     const already = reactions.some(
-      (r) =>
-        r.messageId === messageId &&
-        r.emoji === emoji &&
-        r.user === username
+      (r) => r.messageId === messageId && r.emoji === emoji && r.user === username
     );
     const event: Reaction = {
       messageId,
@@ -283,7 +263,6 @@ function ChatWindow({
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* notification */}
       <AnimatePresence>
         {alert && (
           <motion.div
@@ -305,7 +284,6 @@ function ChatWindow({
         )}
       </AnimatePresence>
 
-      {/* messages */}
       <main className="flex-1 overflow-auto px-6 py-4 space-y-4">
         {msgs.map((m) => (
           <MessageBubble
@@ -319,21 +297,19 @@ function ChatWindow({
         <div ref={bottomRef} />
       </main>
 
-      {/* input */}
       <footer className="flex items-center px-6 py-3 bg-f1-card flex-shrink-0">
         <input
           type="text"
           className="flex-1 mr-2 px-4 py-2 rounded-full bg-gray-800 placeholder-gray-400 focus:outline-none"
           placeholder="Type a message…"
           value={input}
-          onChange={(e) => {
+          onChange={(e: ChangeEvent<HTMLInputElement>) => {
             if (e.target.value.length <= MAX_CHAR_LIMIT) {
               setInput(e.target.value);
             }
           }}
-          onKeyDown={(e) => e.key === "Enter" && send()}
+          onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && send()}
         />
-        {/* character count */}
         <span className="text-sm text-gray-400 mr-4">
           {input.length}/{MAX_CHAR_LIMIT}
         </span>
