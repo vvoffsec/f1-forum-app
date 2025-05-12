@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client";
 
 import {
@@ -133,7 +132,7 @@ export default function MainPage() {
       const racesArr = racesJson.MRData.RaceTable.Races;
       setRaces(racesArr);
 
-      // Past GP Winners (last 5)
+      // Past GP Winners
       const pastRaces = racesArr.filter(r => new Date(`${r.date}T${r.time}`) < now);
       const recentPast = pastRaces.slice(-5);
       const winnerEntries = await Promise.all(
@@ -155,14 +154,14 @@ export default function MainPage() {
         dsJson.MRData.StandingsTable.StandingsLists[0]?.DriverStandings ?? []
       );
 
-      // Constructor Standings
+      // Constructors Standings
       const resCS = await fetch(`${base}/${year}/constructorstandings.json`);
       const csJson = (await resCS.json()) as ErgastConstructorStandingsResponse;
       setConstructorStandings(
         csJson.MRData.StandingsTable.StandingsLists[0]?.ConstructorStandings ?? []
       );
 
-      // Threads w/ 5-minute cache
+      // Chats with a cache
       const CACHE_KEY = "threads_cache";
       const CACHE_TIME_KEY = "threads_cache_time";
       const TTL = 5 * 60 * 1000;
@@ -182,7 +181,7 @@ export default function MainPage() {
     load();
   }, []);
 
-  // Sort threads
+  // Sort chats
   const unlockedThreads = threads
     .filter(t => !t.locked)
     .sort((a, b) => +new Date(a.date) - +new Date(b.date));
@@ -198,7 +197,6 @@ export default function MainPage() {
 
   return (
     <>
-      {/* centre Clerk modals */}
       <style jsx global>{`
         #__clerk_modal__ {
           position: fixed !important;
@@ -214,7 +212,6 @@ export default function MainPage() {
       `}</style>
 
       <main className="bg-f1-charcoal min-h-screen text-f1-white px-6 py-8">
-        {/* Header */}
         <header className="flex justify-between items-center mb-12">
           <h1 className="text-4xl font-extrabold">TrackTalk</h1>
           <div className="relative">
@@ -233,7 +230,7 @@ export default function MainPage() {
                     onClick={() => setMenuOpen(o => !o)}
                     className="flex items-center text-f1-red hover:text-red-400 transition"
                   >
-                    Hi, {user?.username ?? "there"}!
+                    Hi {user?.username ?? "there"}!
                     <svg
                       className={`w-4 h-4 ml-1 transform transition ${menuOpen ? "rotate-180" : ""}`}
                       fill="none"
